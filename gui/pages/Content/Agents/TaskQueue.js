@@ -1,54 +1,69 @@
-import React, {useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import styles from './Agents.module.css';
-import Image from "next/image";
-import Head from 'next/head';
-import {ToastContainer, toast} from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
+import {getExecutionTasks} from '@/pages/api/DashboardService';
+import Image from "next/image";
 
-export default function TaskQueue() {
-  const [task_title, setTaskTitle] = useState("")
-  const [taskList, setTask] = useState([])
+export default function TaskQueue({selectedRunId}) {
+  const [tasks, setTasks] = useState({pending: [], completed: []});
 
-  const handleTaskTitleChange = (event) => {
-    setTaskTitle(event.target.value);
-  };
+  useEffect(() => {
+    fetchTasks();
+  }, [selectedRunId]);
 
-  const handleTaskCreate = (task_title) => {
-    if(task_title.replace(/\s/g, '') === '') {
-      toast.error("Task is empty", {autoClose: 1800});
-      return
-    }
+  function fetchTasks() {
+    getExecutionTasks(selectedRunId)
+      .then((response) => {
+        setTasks({
+          pending: response.data.tasks,
+          completed: response.data.completed_tasks,
+        });
+      })
+      .catch((error) => {
+        console.error('Error fetching execution feeds:', error);
+      });
+  }
 
-    const newTask = {title: task_title};
-    setTask((prevArray) => [...prevArray, newTask]);
-    toast.success("New task created", {autoClose: 1800});
-    setTaskTitle("");
-  };
-
-  return (<>
-    <Head>
-      {/* eslint-disable-next-line @next/next/no-page-custom-font */}
-      <link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro&display=swap" rel="stylesheet"/>
-    </Head>
-    <div>
-      <div className={styles.custom_task_box} style={{background:'#272335'}}>
-        <div>Add Custom Task</div>
-        <div style={{margin:'10px 0',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
-          <div style={{flex:'1'}}><input className="input_medium" type="text" value={task_title} onChange={handleTaskTitleChange}/></div>
-          <div>
-            <button onClick={() => handleTaskCreate(task_title)} className={styles.agent_button} style={{marginLeft:'10px',padding:'5px 7px'}}>
-              <Image width={16} height={16} src="/images/add.svg" alt="add-icon"/>
-            </button>
+  return (
+    <>
+      {tasks.pending.length <= 0 && tasks.completed.length <= 0 ? <div style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        marginTop: '40px',
+        width: '100%'
+      }}>
+        <Image width={150} height={60} src="/images/no_permissions.svg" alt="no-permissions"/>
+        <span className={styles.feed_title} style={{marginTop: '8px'}}>No Tasks found!</span>
+      </div> : <div>
+        {tasks.pending.length > 0 && <div className={styles.task_header}>Pending Tasks</div>}
+        {tasks.pending.map((task, index) => (
+          <div key={index} className={styles.history_box}
+               style={{background: '#272335', padding: '20px', cursor: 'default'}}>
+            <div style={{display: 'flex'}}>
+              <div>
+                <Image width={14} height={14} style={{mixBlendMode: 'exclusion'}} src="/images/loading.gif"
+                       alt="loading-icon"/>
+              </div>
+              <div className={styles.feed_title}>
+                {task.name}
+              </div>
+            </div>
           </div>
-        </div>
-      </div>
-      {taskList.map((task, index) => (<div key={index} className={styles.history_box} style={{background:'#272335',padding:'20px',cursor:'default'}}>
-        <div style={{display:'flex'}}>
-          <div className={styles.feed_icon}>🌟</div>
-          <div className={styles.feed_title}>{task.title}</div>
-        </div>
-      </div>))}
-    </div>
-    <ToastContainer/>
-  </>)
+        ))}
+        {tasks.completed.length > 0 && <div className={styles.task_header}>Completed Tasks</div>}
+        {tasks.completed.map((task, index) => (
+          <div key={index} className={styles.history_box}
+               style={{background: '#272335', padding: '20px', cursor: 'default'}}>
+            <div style={{display: 'flex'}}>
+              <div className={styles.feed_title} style={{marginLeft: '0'}}>
+                {task.name}
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>}
+    </>
+  );
 }

@@ -1,46 +1,47 @@
 from abc import abstractmethod
-
 from pydantic import BaseModel, Field
 
 
 class BaseMessage(BaseModel):
-  """Message object."""
+    """Base message object."""
 
-  content: str
-  additional_kwargs: dict = Field(default_factory=dict)
+    content: str
+    additional_kwargs: dict = Field(default_factory=dict)
 
-  @property
-  @abstractmethod
-  def type(self) -> str:
-    """Type of the message, used for serialization."""
+    @property
+    @abstractmethod
+    def type(self) -> str:
+        """Message type used."""
 
 
 class HumanMessage(BaseMessage):
-  """Type of message that is spoken by the human."""
+    """Message by human."""
 
-  example: bool = False
+    example: bool = False
 
-  @property
-  def type(self) -> str:
-    """Type of the message, used for serialization."""
-    return "user"
+    @property
+    def type(self) -> str:
+        return "user"
 
 
 class AIMessage(BaseMessage):
-  """Type of message that is spoken by the AI."""
+    """Type of message that is spoken by the AI."""
 
-  example: bool = False
+    example: bool = False
 
-  @property
-  def type(self) -> str:
-    """Type of the message, used for serialization."""
-    return "assistant"
+    @property
+    def type(self) -> str:
+        return "assistant"
 
 
 class SystemMessage(BaseMessage):
-  """Type of message that is a system message."""
+    """Used when message is system message."""
 
-  @property
-  def type(self) -> str:
-    """Type of the message, used for serialization."""
-    return "system"
+    @property
+    def type(self) -> str:
+        return "system"
+
+
+class GitHubLinkRequest(BaseModel):
+    """Used for Request body in install API"""
+    github_link: str

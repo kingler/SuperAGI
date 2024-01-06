@@ -1,9 +1,14 @@
 from abc import abstractmethod
 from functools import wraps
-from typing import Optional, Type, Callable, Any, Union, Dict, Tuple
-
-from pydantic import BaseModel, Field, create_model, validate_arguments, Extra
 from inspect import signature
+from typing import List
+from typing import Optional, Type, Callable, Any, Union, Dict, Tuple
+import yaml
+from pydantic import BaseModel, create_model, validate_arguments, Extra
+from superagi.models.tool_config import ToolConfig
+from sqlalchemy import Column, Integer, String, Boolean
+from superagi.types.key_type import ToolConfigKeyType
+
 
 from superagi.config.config import get_config
 
@@ -54,20 +59,37 @@ def create_function_schema(
     )
 
 
+class BaseToolkitConfiguration:
+
+    def __init__(self):
+        self.session = None
+
+    def get_tool_config(self, key: str):
+        # Default implementation of the tool configuration retrieval logic
+        with open("config.yaml") as file:
+            config = yaml.safe_load(file)
+
+        # Retrieve the value associated with the given key
+        return config.get(key)
+
+
 class BaseTool(BaseModel):
     name: str = None
     description: str
     args_schema: Type[BaseModel] = None
+    permission_required: bool = True
+    toolkit_config: BaseToolkitConfiguration = BaseToolkitConfiguration()
+
+    class Config:
+        arbitrary_types_allowed = True
 
     @property
     def args(self):
-        # print("args_schema", self.args_schema)
         if self.args_schema is not None:
             return self.args_schema.schema()["properties"]
         else:
             name = self.name
             args_schema = create_function_schema(f"{name}Schema", self.execute)
-            # print("args:", args_schema.schema()["properties"])
             return args_schema.schema()["properties"]
 
     @abstractmethod
@@ -76,7 +98,7 @@ class BaseTool(BaseModel):
 
     @property
     def max_token_limit(self):
-        return get_config("MAX_TOOL_TOKEN_LIMIT", 600)
+        return int(get_config("MAX_TOOL_TOKEN_LIMIT", 600))
 
     def _parse_input(
             self,
@@ -127,6 +149,9 @@ class BaseTool(BaseModel):
         else:
             return cls(description=func.__doc__)
 
+    def get_tool_config(self, key):
+        return self.toolkit_config.get_tool_config(key=key)
+
 
 class FunctionalTool(BaseTool):
     name: str = None
@@ -141,7 +166,6 @@ class FunctionalTool(BaseTool):
         else:
             name = self.name
             args_schema = create_function_schema(f"{name}Schema", self.execute)
-            # print("args:", args_schema.schema()["properties"])
             return args_schema.schema()["properties"]
 
     def _execute(self, *args: Any, **kwargs: Any):
@@ -153,6 +177,10 @@ class FunctionalTool(BaseTool):
             return cls(description=func.__doc__, args_schema=args_schema)
         else:
             return cls(description=func.__doc__)
+
+    def registerTool(cls):
+        cls.__registerTool__ = True
+        return cls
 
 
 def tool(*args: Union[str, Callable], return_direct: bool = False,
@@ -175,3 +203,42 @@ def tool(*args: Union[str, Callable], return_direct: bool = False,
         return decorator(args[0])
     else:
         return decorator
+    
+class ToolConfiguration:
+
+    def __init__(self, key: str, key_type: str = None, is_required: bool = False, is_secret: bool = False):
+        self.key = key
+        if is_secret is None:
+            self.is_secret = False
+        elif isinstance(is_secret, bool):
+            self.is_secret = is_secret
+        else:
+            raise ValueError("is_secret should be a boolean value")
+        if is_required is None:
+            self.is_required = False
+        elif isinstance(is_required, bool):
+            self.is_required = is_required
+        else:
+            raise ValueError("is_required should be a boolean value")
+        
+        if key_type is None:
+            self.key_type = ToolConfigKeyType.STRING
+        elif isinstance(key_type,ToolConfigKeyType):
+            self.key_type = key_type
+        else:
+            raise ValueError("key_type should be string/file/integer")
+
+
+class BaseToolkit(BaseModel):
+    name: str
+    description: str
+
+    @abstractmethod
+    def get_tools(self) -> List[BaseTool]:
+        # Add file related tools object here
+        pass
+
+    @abstractmethod
+    def get_env_keys(self) -> List[str]:
+        # Add file related config keys here
+        pass

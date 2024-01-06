@@ -2,8 +2,10 @@ import json
 from abc import ABC, abstractmethod
 from typing import Dict, NamedTuple, List
 import re
-
+import ast
+import json
 from superagi.helper.json_cleaner import JsonCleaner
+from superagi.lib.logger import logger
 
 
 class AgentGPTAction(NamedTuple):
@@ -12,7 +14,7 @@ class AgentGPTAction(NamedTuple):
 
 
 class AgentTasks(NamedTuple):
-    tasks: List[Dict] = []
+    tasks: List[str] = []
     error: str = ""
 
 
@@ -22,62 +24,47 @@ class BaseOutputParser(ABC):
         """Return AgentGPTAction"""
 
 
+class AgentSchemaOutputParser(BaseOutputParser):
+    """Parses the output from the agent schema"""
+    def parse(self, response: str) -> AgentGPTAction:
+        if response.startswith("```") and response.endswith("```"):
+            response = "```".join(response.split("```")[1:-1])
+        response = JsonCleaner.extract_json_section(response)
+        # ast throws error if true/false params passed in json
+        response = JsonCleaner.clean_boolean(response)
 
-class AgentOutputParser(BaseOutputParser):
-    def parse(self, text: str) -> AgentGPTAction:
+        # OpenAI returns `str(content_dict)`, literal_eval reverses this
         try:
-            print(text)
-            text = JsonCleaner.check_and_clean_json(text)
-            parsed = json.loads(text, strict=False)
-        except json.JSONDecodeError:
+            logger.debug("AgentSchemaOutputParser: ", response)
+            response_obj = ast.literal_eval(response)
+            args = response_obj['tool']['args'] if 'args' in response_obj['tool'] else {}
             return AgentGPTAction(
-                name="ERROR",
-                args={"error": f"Could not parse invalid json: {text}"},
+                name=response_obj['tool']['name'],
+                args=args,
             )
-        try:
-            format_prefix_yellow = "\033[93m\033[1m"
-            format_suffix_yellow = "\033[0m\033[0m"
-            format_prefix_green = "\033[92m\033[1m"
-            format_suffix_green = "\033[0m\033[0m"
-            print(format_prefix_green + "Intelligence : " + format_suffix_green)
-            print(format_prefix_yellow + "Thoughts: " + format_suffix_yellow + parsed["thoughts"]["text"] + "\n")
-            print(format_prefix_yellow + "Reasoning: " + format_suffix_yellow + parsed["thoughts"]["reasoning"] + "\n")
-            print(format_prefix_yellow + "Plan: " + format_suffix_yellow + parsed["thoughts"]["plan"] + "\n")
-            print(format_prefix_yellow + "Criticism: " + format_suffix_yellow + parsed["thoughts"]["criticism"] + "\n")
-            print(format_prefix_green + "Action : " + format_suffix_green)
-            print(format_prefix_yellow + "Tool: " + format_suffix_yellow + parsed["command"]["name"] + "\n")
-            # print(format_prefix_yellow + "Args: "+ format_suffix_yellow + parsed["command"]["args"] + "\n")
+        except BaseException as e:
+            logger.info(f"AgentSchemaOutputParser: Error parsing JSON response {e}")
+            raise e
 
+
+class AgentSchemaToolOutputParser(BaseOutputParser):
+    """Parses the output from the agent schema for the tool"""
+    def parse(self, response: str) -> AgentGPTAction:
+        if response.startswith("```") and response.endswith("```"):
+            response = "```".join(response.split("```")[1:-1])
+        response = JsonCleaner.extract_json_section(response)
+        # ast throws error if true/false params passed in json
+        response = JsonCleaner.clean_boolean(response)
+
+        # OpenAI returns `str(content_dict)`, literal_eval reverses this
+        try:
+            logger.debug("AgentSchemaOutputParser: ", response)
+            response_obj = ast.literal_eval(response)
+            args = response_obj['args'] if 'args' in response_obj else {}
             return AgentGPTAction(
-                name=parsed["command"]["name"],
-                args=parsed["command"]["args"],
+                name=response_obj['name'],
+                args=args,
             )
-        except (KeyError, TypeError):
-            # If the command is null or incomplete, return an erroneous tool
-            return AgentGPTAction(
-                name="ERROR", args={"error": f"Incomplete command args: {parsed}"}
-            )
-
-    def parse_tasks(self, text: str) -> AgentTasks:
-        try:
-            parsed = json.loads(text, strict=False)
-        except json.JSONDecodeError:
-            preprocessed_text = JsonCleaner.preprocess_json_input(text)
-            try:
-                parsed = json.loads(preprocessed_text, strict=False)
-            except Exception:
-                return AgentTasks(
-                    error=f"Could not parse invalid json: {text}",
-                )
-        try:
-            print("Tasks: ", parsed["tasks"])
-            return AgentTasks(
-                tasks=parsed["tasks"]
-            )
-        except (KeyError, TypeError):
-            # If the command is null or incomplete, return an erroneous tool
-            return AgentTasks(
-                error=f"Incomplete tool args: {parsed}",
-            )
-
-
+        except BaseException as e:
+            logger.info(f"AgentSchemaToolOutputParser: Error parsing JSON response {e}")
+            raise e
